@@ -1,0 +1,13 @@
+# Unlike .gitignore, the published package DOES include the binaries:
+# ios/Frameworks/*.xcframework and assets/fb/* (see RELEASING.md).
+.dart_tool/
+pubspec.lock
+build/
+firebird-ios-build/
+.github/
+RELEASING.md
+example/build/
+example/.dart_tool/
+example/ios/Pods/
+example/ios/.symlinks/
+example/ios/Flutter/ephemeral/

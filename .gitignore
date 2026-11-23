@@ -1,0 +1,6 @@
+ios/Frameworks/*.xcframework
+assets/fb/*
+!assets/fb/.gitkeep
+.dart_tool/
+pubspec.lock
+build/

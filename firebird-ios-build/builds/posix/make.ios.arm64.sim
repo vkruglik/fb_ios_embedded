@@ -1,0 +1,118 @@
+# builds/posix/make.ios.arm64.sim  —  Firebird 5 cross-build: iOS Simulator, arm64 (Apple Silicon)
+#
+# Included by the cross2 phase (Makefile.in:364-366) as make.crossPlatform when
+# configure runs with --with-cross-build=ios.arm64.sim (configure.ac:1508).
+# Modelled on builds/posix/make.android.arm64 + builds/posix/darwin.defaults.
+#
+# What matters here and why:
+#  1. On Darwin, configure.ac:713-718 unconditionally adds to CXXFLAGS/LDFLAGS
+#     the libc++ of the *macOS* vcpkg triplet (fb-arm64-osx). For the iOS phase
+#     that is wrong (macOS libc++ in an iOS binary), so those tokens are
+#     filtered out of AC_CFLAGS/AC_CXXFLAGS/AC_LDFLAGS below and the iOS SDK
+#     libc++ is used.
+#  2. Makefile.in:392: cross2 makes autoconfig.h a symlink to
+#     src/include/cross/$(CROSS_CONFIG). build_firebird_ios.sh generates the
+#     ios.arm64 file from the autoconfig.auto of the native configure.
+#  3. prerequisites: as for Android, a symlink to the ICU headers in gen/cross-sim/unicode.
+
+IOS_SDK_NAME    := iphonesimulator
+IOS_MIN_VERSION ?= 13.0
+IOS_SDK         := $(shell xcrun --sdk $(IOS_SDK_NAME) --show-sdk-path)
+IOS_VERSION_MIN_FLAG := -mios-simulator-version-min=$(IOS_MIN_VERSION)
+
+# CC/CXX are the ios-tools/ios-clang(++) wrappers, which append
+# -arch arm64 -isysroot <iOS SDK> <min iOS> at the end of the command.
+# Why not flags in CC itself: libcds is built with CMake, which requires a
+# path to a single file in CMAKE_CXX_COMPILER. Why at the end: CMake and the
+# host defaults add the macOS SDK, and clang uses the last -isysroot.
+# Libraries in extern/ (decNumber) also take CROSS_FLAGS; Android exports
+# them, and so does this file (see below).
+IOS_REAL_CC  := $(shell xcrun --sdk $(IOS_SDK_NAME) -find clang)
+IOS_REAL_CXX := $(shell xcrun --sdk $(IOS_SDK_NAME) -find clang++)
+CC     := $(ROOT)/builds/posix/ios-tools/ios-clang
+CXX    := $(ROOT)/builds/posix/ios-tools/ios-clang++
+export IOS_REAL_CC IOS_REAL_CXX IOS_SDK IOS_VERSION_MIN_FLAG
+# The host gen/make.platform exports MACOSX_DEPLOYMENT_TARGET (12.7), and CMake
+# would add -mmacosx-version-min next to the iOS flag for libcds. SDKROOT makes
+# CMake take the iOS SDK as the sysroot.
+unexport MACOSX_DEPLOYMENT_TARGET
+export SDKROOT := $(IOS_SDK)
+AR     := $(shell xcrun --sdk $(IOS_SDK_NAME) -find ar)
+AS     := $(shell xcrun --sdk $(IOS_SDK_NAME) -find as)
+LD     := $(shell xcrun --sdk $(IOS_SDK_NAME) -find ld)
+NM     := $(shell xcrun --sdk $(IOS_SDK_NAME) -find nm)
+RANLIB := $(shell xcrun --sdk $(IOS_SDK_NAME) -find ranlib)
+STRIP  := $(shell xcrun --sdk $(IOS_SDK_NAME) -find strip)
+export CC CXX AR
+
+# ---- vcpkg: ICU for this triplet (installed by build_firebird_ios.sh) -----
+IOS_TRIPLET        := fb-arm64-ios-simulator
+VCPKG_IOS_INSTALLED := $(ROOT)/vcpkg_installed_ios/$(IOS_TRIPLET)
+CROSS_FLAGS        := -I$(ROOT)/gen/cross-sim -I$(VCPKG_IOS_INSTALLED)/include
+export CROSS_FLAGS
+
+.PHONY: prerequisites
+prerequisites: $(ROOT)/gen/cross-sim/unicode
+	# With --with-builtin-tommath/tomcrypt the native phase builds tommath and
+	# tomcrypt INSIDE THE TREE (extern/libtom*/**/*.o) for macOS, and cross2
+	# takes the objects from the same paths and, seeing them up to date, does
+	# not rebuild them: macOS code ended up in libfbclient ("building for iOS,
+	# but linking in object file ... built for macOS"). On Android the native
+	# phase uses the system tommath, so the problem does not show there.
+	find $(ROOT)/extern/libtommath $(ROOT)/extern/libtomcrypt \( -name "*.o" -o -name "*.lo" -o -name "*.la" \) -delete
+	rm -rf $(ROOT)/extern/libtommath/.libs $(ROOT)/extern/libtomcrypt/.libs
+	rm -f $(STATIC_LIB)/libtommath.a $(STATIC_LIB)/libtomcrypt.a
+
+$(ROOT)/gen/cross-sim/unicode:
+	rm -rf $(ROOT)/gen/cross-sim
+	mkdir -p $(ROOT)/gen/cross-sim
+	ln -s $(VCPKG_IOS_INSTALLED)/include/unicode $(ROOT)/gen/cross-sim/unicode
+
+# ---- item 1: drop the macOS vcpkg libc++ from the flags set by configure ---
+OSX_VCPKG := $(firstword $(wildcard $(ROOT)/vcpkg_installed/fb-*-osx))
+AC_CFLAGS   := $(filter-out -I$(OSX_VCPKG)/include,$(AC_CFLAGS))
+AC_CXXFLAGS := $(filter-out -nostdinc++ -isystem $(OSX_VCPKG)/include/c++/v1 -I$(OSX_VCPKG)/include,$(AC_CXXFLAGS))
+AC_LDFLAGS  := $(filter-out -nostdlib++ -stdlib=libc++ -L$(OSX_VCPKG)/lib -lc++,$(AC_LDFLAGS))
+
+# ---- shared with darwin.defaults (PLATFORM_PATH, link style, Apple frameworks) --
+include $(ROOT)/gen/darwin.defaults
+
+buildSubDirectory=$(FB_BUILD)
+LibraryFullName=$(LibraryBaseName)
+LibrarySoName=$(LibraryBaseName)
+LIB_PLATFORM_RPATH=-Wl,-rpath,@executable_path/Frameworks
+
+COMMON_FLAGS=-DDARWIN -DARM64 -DIOS -pipe -MMD -fPIC -fno-common -fmessage-length=0 \
+	-isysroot $(IOS_SDK) $(IOS_VERSION_MIN_FLAG) \
+	-I$(ROOT)/extern/libtommath -I$(ROOT)/extern/libtomcrypt/src/headers \
+	$(CROSS_FLAGS) -fsigned-char -Wno-inline-new-delete
+
+OPTIMIZE_FLAGS=-O2
+WARN_FLAGS=-Werror=delete-incomplete -Wall -Wno-switch -Wno-parentheses \
+	-Wno-unknown-pragmas -Wno-unused-variable -Wno-non-virtual-dtor
+
+PROD_FLAGS=$(COMMON_FLAGS) $(OPTIMIZE_FLAGS)
+DEV_FLAGS=$(COMMON_FLAGS) -ggdb -fno-omit-frame-pointer $(WARN_FLAGS)
+
+CXXFLAGS := $(CXXFLAGS) -std=c++17 -fvisibility-inlines-hidden -fvisibility=hidden
+
+CROSS_CONFIG=ios.arm64.sim
+
+# Redefined after including darwin.defaults: linking needs the iOS sysroot.
+LIB_LINK_OPTIONS=$(LD_FLAGS) -isysroot $(IOS_SDK) $(IOS_VERSION_MIN_FLAG) -dynamiclib
+LIB_BUNDLE_OPTIONS=$(LD_FLAGS) -isysroot $(IOS_SDK) $(IOS_VERSION_MIN_FLAG) -bundle
+LIB_LINK_SONAME:=-current_version @FIREBIRD_VERSION@ -compatibility_version @FIREBIRD_VERSION@
+
+IosLibs := -L$(VCPKG_IOS_INSTALLED)/lib -liconv
+LINK_LIBS += $(IosLibs)
+STATICLINK_LIBS += $(IosLibs)
+SO_LINK_LIBS += $(IosLibs)
+
+EXE_LINK_OPTIONS= $(LDFLAGS) -isysroot $(IOS_SDK) $(IOS_VERSION_MIN_FLAG) $(UNDEF_FLAGS) $(LIB_PATH_OPTS) $(LINK_EMPTY_SYMBOLS)
+
+# cross2 also builds the utilities (isql/gbak/gfix/gpre). They are useless on
+# iOS (they cannot run on the Mac), but disabling them is not worth breaking
+# the build order: they link as ordinary arm64 Mach-O files and just sit in
+# gen/Release/firebird/bin. If some utility fails to link because of iOS
+# specifics (no system()/fork()), that is not a blocker: the embedded libraries
+# (yvalve/engine/fbintl) are built before them in cross2.

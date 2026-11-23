@@ -1,0 +1,3 @@
+# The icu 71.1 port is a byte-for-byte copy from vcpkg (git tree 13fe0c90), and
+# some files have CRLF: no conversion, or the port's patches may stop applying.
+* -text

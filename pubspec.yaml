@@ -1,0 +1,33 @@
+name: fb_ios_embedded
+description: >-
+  Embedded Firebird 5 database engine for Flutter apps on iOS, with ICU.
+  The iOS counterpart of fb_5_embedded, for use with the fbdb driver.
+version: 0.3.0
+homepage: https://github.com/vkruglik/fb_ios_embedded
+repository: https://github.com/vkruglik/fb_ios_embedded
+issue_tracker: https://github.com/vkruglik/fb_ios_embedded/issues
+topics: [firebird, database, sql, ios, ffi]
+
+environment:
+  sdk: ^3.11.0
+  flutter: '>=3.10.0'
+
+
+dependencies:
+  flutter:
+    sdk: flutter
+  ffi: ^2.2.0
+  path: ^1.8.0
+  path_provider: ^2.1.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        ffiPlugin: true
+  assets:
+    - assets/fb/

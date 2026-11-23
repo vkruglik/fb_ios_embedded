@@ -1,0 +1,6 @@
+#!/bin/sh
+# Compiler wrapper for the Firebird cross phase for iOS. The target flags go
+# AT THE END: clang uses the last -isysroot, which overrides the macOS SDK that
+# CMake (libcds) and make add on their own. The values come from
+# builds/posix/make.ios.arm64(.sim).
+exec "${IOS_REAL_CC:?}" "$@" -arch arm64 -isysroot "${IOS_SDK:?}" ${IOS_VERSION_MIN_FLAG:?}

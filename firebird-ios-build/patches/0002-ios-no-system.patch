@@ -1,0 +1,64 @@
+diff --git a/src/isql/isql.epp b/src/isql/isql.epp
+index a0cc2f240e..2790ea8a86 100644
+--- a/src/isql/isql.epp
++++ b/src/isql/isql.epp
+@@ -4158,7 +4158,12 @@ static processing_state copy_table(TEXT* source,
+ 			altdb = otherdb;
+ 		TEXT cmd[MAXPATHLEN * 2 + 20];
+ 		sprintf(cmd, "isql -q %s -i %s", altdb, ftmp.c_str());
++#ifdef IOS
++		// iOS: system() is unavailable in the SDK, so a second isql cannot be run.
++		if (true)
++#else
+ 		if (system(cmd))
++#endif
+ 		{
+ 			IUTILS_msg_get(COPY_ERR, errbuf, SafeArg() << destination << altdb);
+ 			STDERROUT(errbuf);
+@@ -4920,7 +4925,13 @@ static processing_state escape(const TEXT* cmd)
+ 	if (!*shellcmd)
+ 		shellcmd = emptyCmd;
+ 
++#ifdef IOS
++	// iOS: system() is unavailable in the SDK, so no shell can be started.
++	FB_UNUSED_VAR(shellcmd);
++	const int rc = -1;
++#else
+ 	const int rc = system(shellcmd);
++#endif
+ 
+ #ifdef WIN_NT
+ 	// If we are reading from the temp file, restore the read position because
+diff --git a/src/jrd/replication/Utils.cpp b/src/jrd/replication/Utils.cpp
+index 7f9ff6fe85..3884567629 100644
+--- a/src/jrd/replication/Utils.cpp
++++ b/src/jrd/replication/Utils.cpp
+@@ -251,6 +251,11 @@ namespace Replication
+ 		DWORD exitCode = 0;
+ 		GetExitCodeProcess(seInfo.hProcess, &exitCode);
+ 		return (int) exitCode;
++#elif defined(IOS)
++		// iOS: system() is unavailable in the SDK; replication journal archive
++		// commands are not run and fail like a command that did not succeed.
++		(void) command;
++		return -1;
+ #else
+ 		return system(command.c_str());
+ #endif
+diff --git a/src/yvalve/utl.cpp b/src/yvalve/utl.cpp
+index 00985d616b..31d6194a32 100644
+--- a/src/yvalve/utl.cpp
++++ b/src/yvalve/utl.cpp
+@@ -1820,7 +1820,12 @@ int API_ROUTINE gds__edit(const TEXT* file_name, USHORT /*type*/)
+ 	TEXT buffer[MAXPATHLEN * 2 + 5];
+ 	fb_utils::snprintf(buffer, sizeof(buffer), "%s \"%s\"", editor.c_str(), file_name);
+ 
++#ifdef IOS
++	// iOS: system() is unavailable in the SDK, so no external editor can be run.
++	FB_UNUSED_VAR(buffer);
++#else
+ 	FB_UNUSED(system(buffer));
++#endif
+ 
+ 	struct STAT after;
+ 	os_utils::stat(file_name, &after);

@@ -1,0 +1,31 @@
+diff --git a/src/common/os/darwin/mac_utils.m b/src/common/os/darwin/mac_utils.m
+index 92bfb3f..135369e 100644
+--- a/src/common/os/darwin/mac_utils.m
++++ b/src/common/os/darwin/mac_utils.m
+@@ -22,10 +22,18 @@
+  */
+ 
+ 
++#import <TargetConditionals.h>
+ #import <Foundation/Foundation.h>
+ #import <Security/Security.h>
+ #import <os/log.h>
+ 
++#if TARGET_OS_IPHONE
++// iOS: SecTask* API is macOS-only; an iOS process is always sandboxed.
++Boolean isSandboxed()
++{
++	return true;
++}
++#else
+ Boolean isSandboxed()
+ {
+ 	SecTaskRef task = SecTaskCreateFromSelf(nil);
+@@ -34,6 +42,7 @@ Boolean isSandboxed()
+ 
+     return value != nil;
+ }
++#endif
+ 
+ const char* getTemporaryFolder()
+ {
