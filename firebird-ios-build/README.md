@@ -39,6 +39,14 @@ firebird-ios-build/
   `Xcode.app`.
 - Homebrew tools, as in Firebird's macOS CI job:
   `brew install automake autoconf-archive libtool ninja pkg-config cmake`.
+- A Python 3 that has `distutils`. Firebird's `configure` builds the host
+  libc++ (LLVM 13) through vcpkg, and its `utils/merge_archives.py` imports
+  `distutils`, which Python 3.12 removed. The macOS system Python (3.9)
+  has it. If CMake picks a newer Python (for example Homebrew's), install
+  setuptools into it: `python3 -m pip install --break-system-packages setuptools`.
+  Otherwise the build stops with `No module named 'distutils'` in
+  `vcpkg/buildtrees/libcxx/build-fb-arm64-osx-rel-out.log`, followed by
+  `'type_traits' file not found` while compiling `gpre`.
 
 ## Running
 

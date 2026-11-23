@@ -51,6 +51,12 @@ jobs:
       - name: Build tools
         run: |
           brew install automake autoconf-archive libtool ninja pkg-config cmake
+          # The host libcxx that Firebird's configure builds through vcpkg
+          # (LLVM 13) runs utils/merge_archives.py, which imports distutils,
+          # removed in Python 3.12. CMake picks the runner's Homebrew Python
+          # (3.15); setuptools provides distutils for it.
+          python3 -m pip install --quiet --break-system-packages setuptools
+          python3 -c 'import sys, distutils.spawn; print("Python", sys.version.split()[0], "distutils:", distutils.__file__)'
           sw_vers; xcodebuild -version; cmake --version | head -n1
 
       - name: Firebird sources
