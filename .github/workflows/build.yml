@@ -14,7 +14,10 @@ env:
 
 jobs:
   build:
-    runs-on: macos-26
+    # The binaries are verified with Xcode 27.2, which GitHub provides only on
+    # the xcode-27 image (public preview as of November 2026); the macos-26
+    # image has Xcode 26.x only.
+    runs-on: xcode-27
     timeout-minutes: 90
     permissions:
       contents: write
@@ -24,7 +27,7 @@ jobs:
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: latest-stable
+          xcode-version: '27.2'
 
       - name: Build tools
         run: brew install automake autoconf-archive libtool ninja pkg-config cmake
@@ -33,6 +36,9 @@ jobs:
         run: git clone --branch "$FIREBIRD_TAG" --depth 1 https://github.com/FirebirdSQL/firebird.git "$RUNNER_TEMP/firebird"
 
       - name: firebird.msg from the official macOS package
+        env:
+          # anonymous GitHub API calls from shared runners get HTTP 403
+          GITHUB_TOKEN: ${{ github.token }}
         run: firebird-ios-build/fetch_firebird_msg.sh "${FIREBIRD_TAG#v}" "$RUNNER_TEMP/firebird.msg"
 
       - name: Build

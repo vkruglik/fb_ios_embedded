@@ -10,6 +10,9 @@
 #
 # Usage: fetch_firebird_msg.sh <version> <destination file>
 #   fetch_firebird_msg.sh 5.0.4 ~/fb/firebird.msg
+#
+# GITHUB_TOKEN, if set, authenticates the release lookup: anonymous calls to
+# the GitHub API from shared CI runners are rate-limited and get HTTP 403.
 set -euo pipefail
 
 VERSION="${1:?usage: fetch_firebird_msg.sh <version> <destination file>}"
@@ -21,14 +24,20 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 API="https://api.github.com/repos/FirebirdSQL/firebird/releases/tags/v$VERSION"
-INFO="$(curl -fsSL "$API" | python3 -I -c '
+AUTH=()
+if [ -n "${GITHUB_TOKEN:-}" ]; then AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN"); fi
+# ${AUTH[@]+...}: bash 3.2 (macOS) treats an empty array as unbound under set -u.
+curl -fsSL ${AUTH[@]+"${AUTH[@]}"} -H "Accept: application/vnd.github+json" \
+  -o "$WORK/release.json" "$API" \
+  || die "cannot read release v$VERSION from the GitHub API (HTTP 403 means a rate limit: set GITHUB_TOKEN)"
+INFO="$(python3 -I -c '
 import json, sys
-r = json.load(sys.stdin)
+r = json.load(open(sys.argv[1]))
 for a in r.get("assets", []):
     if a["name"].endswith("-macos-arm64.pkg"):
         print(a["name"], a["browser_download_url"], a.get("digest") or "-")
         break
-')" || die "cannot read release v$VERSION from GitHub"
+' "$WORK/release.json")" || die "cannot parse the release v$VERSION description from GitHub"
 [ -n "$INFO" ] || die "release v$VERSION has no *-macos-arm64.pkg asset"
 set -- $INFO
 NAME="$1" URL="$2" DIGEST="$3"
