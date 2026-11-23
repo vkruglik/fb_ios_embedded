@@ -12,25 +12,46 @@ env:
   FIREBIRD_TAG: v5.0.4
   FB_IOS_MIN: '15.0'
 
+defaults:
+  run:
+    # An explicit `shell: bash` runs steps with `-eo pipefail`; the default
+    # `bash -e` would hide a failed build behind `| tee`.
+    shell: bash
+
 jobs:
   build:
-    # The binaries are verified with Xcode 27.2, which GitHub provides only on
-    # the xcode-27 image (public preview as of November 2026); the macos-26
-    # image has Xcode 26.x only.
-    runs-on: xcode-27
-    timeout-minutes: 90
+    name: build (${{ matrix.runner }}, Xcode ${{ matrix.xcode }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The binaries are verified with Xcode 27.2, which GitHub provides
+          # only on the xcode-27 image (macOS 27, public preview as of
+          # November 2026). This entry makes the release.
+          - runner: xcode-27
+            xcode: '27.2'
+            release: true
+          # macOS 26 host with Xcode 26.6: a reference build on the host OS
+          # the binaries were verified on.
+          - runner: macos-26
+            xcode: '26.6'
+            release: false
     steps:
       - uses: actions/checkout@v4
 
       - name: Select Xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: '27.2'
+          xcode-version: ${{ matrix.xcode }}
 
       - name: Build tools
-        run: brew install automake autoconf-archive libtool ninja pkg-config cmake
+        run: |
+          brew install automake autoconf-archive libtool ninja pkg-config cmake
+          sw_vers; xcodebuild -version; cmake --version | head -n1
 
       - name: Firebird sources
         run: git clone --branch "$FIREBIRD_TAG" --depth 1 https://github.com/FirebirdSQL/firebird.git "$RUNNER_TEMP/firebird"
@@ -47,6 +68,23 @@ jobs:
           FB_MSG_FILE="$RUNNER_TEMP/firebird.msg" \
             "$GITHUB_WORKSPACE/firebird-ios-build/build_firebird_ios.sh" 2>&1 | tee "$RUNNER_TEMP/build.log"
 
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/failure-logs"
+          cd "$RUNNER_TEMP/firebird"
+          cp "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/failure-logs/" 2>/dev/null || true
+          find vcpkg/buildtrees vcpkg_installed/vcpkg -name '*.log' -o -name 'issue_body.md' 2>/dev/null \
+            | while read -r f; do mkdir -p "$RUNNER_TEMP/failure-logs/$(dirname "$f")"; cp "$f" "$RUNNER_TEMP/failure-logs/$f"; done
+          find . -name config.log -not -path './vcpkg/*' \
+            | while read -r f; do mkdir -p "$RUNNER_TEMP/failure-logs/$(dirname "$f")"; cp "$f" "$RUNNER_TEMP/failure-logs/$f"; done
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: failure-logs-${{ matrix.runner }}-xcode-${{ matrix.xcode }}
+          path: ${{ runner.temp }}/failure-logs
+
       - name: Package
         id: package
         run: |
@@ -60,14 +98,14 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.package.outputs.name }}
+          name: ${{ steps.package.outputs.name }}-xcode-${{ matrix.xcode }}
           path: |
             ${{ runner.temp }}/${{ steps.package.outputs.name }}.zip
             ${{ runner.temp }}/${{ steps.package.outputs.name }}.zip.sha256
             ${{ runner.temp }}/build.log
 
       - name: Release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') && matrix.release
         uses: softprops/action-gh-release@v2
         with:
           files: |
